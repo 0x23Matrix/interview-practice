@@ -12,7 +12,7 @@ def make_client() -> OpenAI:
         base_url="https://open.bigmodel.cn/api/paas/v4/",
     )
 
-MODEL = os.environ.get("GLM_MODEL", "glm-4-flash")
+MODEL = os.environ.get("GLM_MODEL", "glm-4-plus")
 
 # 保留最近 N 轮对话，超出后裁剪，防止 context 溢出
 HISTORY_KEEP_ROUNDS = 5
