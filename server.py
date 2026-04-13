@@ -46,22 +46,28 @@ class InterviewSession(InterviewSessionBase):
             base_url="https://open.bigmodel.cn/api/paas/v4/",
         )
         self._last_text: str = ""
+        self._had_error: bool = False
 
     def _stream_section(self, messages: list, system: str, agent: str):
         """Yield SSE 事件；完成后将完整文本存入 self._last_text。"""
         yield sse({"type": "section", "agent": agent})
         parts: list[str] = []
-        stream = self._client.chat.completions.create(
-            model=MODEL,
-            max_tokens=2048,
-            messages=[{"role": "system", "content": system}] + messages,
-            stream=True,
-        )
-        for chunk in stream:
-            text = chunk.choices[0].delta.content or ""
-            if text:
-                parts.append(text)
-                yield sse({"type": "token", "text": text})
+        try:
+            stream = self._client.chat.completions.create(
+                model=MODEL,
+                max_tokens=2048,
+                messages=[{"role": "system", "content": system}] + messages,
+                stream=True,
+            )
+            for chunk in stream:
+                text = chunk.choices[0].delta.content or ""
+                if text:
+                    parts.append(text)
+                    yield sse({"type": "token", "text": text})
+        except Exception as e:
+            self._had_error = True
+            yield sse({"type": "error", "msg": str(e)})
+            return
         self._last_text = "".join(parts)
 
     def stream_start(self):
@@ -70,10 +76,14 @@ class InterviewSession(InterviewSessionBase):
             [{"role": "user", "content": self._analyst_prompt()}],
             self._analyst_sys, "analyst",
         )
+        if self._had_error:
+            return
 
         # Phase 2: 第一个面试问题
         self._history = [{"role": "user", "content": "请开始面试。"}]
         yield from self._stream_section(self._history, self._interviewer_sys, "interviewer")
+        if self._had_error:
+            return
         self._history.append({"role": "assistant", "content": self._last_text})
         self._current_question = self._last_text
         yield sse({"type": "done"})
@@ -87,12 +97,16 @@ class InterviewSession(InterviewSessionBase):
             [{"role": "user", "content": f"{ctx}\n\n请对候选人最后一轮的回答进行评估。"}],
             self._evaluator_sys, "evaluator",
         )
+        if self._had_error:
+            return
         evaluation = self._last_text
 
         yield from self._stream_section(
             [{"role": "user", "content": f"{ctx}\n\n请针对最后一轮面试官的问题，提供一个更优质的回答示例（候选人原始回答仅供参考，请勿直接重复）。"}],
             self._better_sys, "better",
         )
+        if self._had_error:
+            return
         better = self._last_text
 
         self._rounds.append({
@@ -105,6 +119,8 @@ class InterviewSession(InterviewSessionBase):
         self._trim_history()
 
         yield from self._stream_section(self._history, self._interviewer_sys, "interviewer")
+        if self._had_error:
+            return
         next_q = self._last_text
         self._history.append({"role": "assistant", "content": next_q})
         self._current_question = next_q

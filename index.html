@@ -168,9 +168,13 @@
         <div>
           <label style="display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 8px;">面试官风格</label>
           <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;">
-            <button id="btn-default" class="btn btn-ghost active" onclick="setStyle('default')">默认通用</button>
-            <button id="btn-custom"  class="btn btn-ghost"        onclick="setStyle('custom')">自定义</button>
+            <button id="btn-default"  class="btn btn-ghost active" onclick="setStyle('default')">默认通用</button>
+            <button id="btn-tencent"  class="btn btn-ghost"        onclick="setStyle('tencent')">鹅厂</button>
+            <button id="btn-bytedance" class="btn btn-ghost"       onclick="setStyle('bytedance')">宇宙厂</button>
+            <button id="btn-alibaba" class="btn btn-ghost"         onclick="setStyle('alibaba')">福报厂</button>
+            <button id="btn-custom"   class="btn btn-ghost"        onclick="setStyle('custom')">自定义</button>
           </div>
+          <div id="style-desc" style="display:none; font-size:0.82rem; color:var(--text-muted); background:#faf9f5; border-left:3px solid var(--accent); border-radius:6px; padding:10px 14px; margin-bottom:8px; line-height:1.7;"></div>
           <textarea id="style-input" rows="3" style="display:none;" placeholder="描述面试官的特点与偏好..."></textarea>
         </div>
 
@@ -200,20 +204,40 @@
   </div>
 
   <script>
-    let useCustomStyle = false;
     let currentAgent = null;
     let currentEl = null;
     let currentText = '';
     let sessionId = null;
 
+    const STYLES = {
+      default: { label: '默认通用', text: '', desc: '专业严谨的技术/业务面试官，注重实际项目经验和可量化成果，喜欢追问技术细节与决策依据，欣赏结构清晰的回答（STAR法则），对笼统或夸大陈述比较敏感。' },
+      tencent: { label: '腾讯·用户价值', text: '腾讯产品经理面试官风格：\n- 无论项目背景多 tech、多前沿，最后几乎都会被拉回到一个问题："这个功能/产品，对用户的价值到底是什么？用户真的需要吗？"\n- 会追问用户体验细节，经常要求评价一个日常使用的不好用 app/功能，并提出具体改进方案\n- 考察用户同理心和产品直觉，看重以用户价值为核心的思考方式', desc: '最终都会追问：这对用户的价值是什么？考察用户同理心和产品直觉。' },
+      bytedance: { label: '字节·深度追问', text: '字节跳动技术面试官风格：\n- 特别喜欢对一个问题深挖到底，例如：为什么选这个技术？考虑过其他方案吗？遇到最难的点在哪？怎么解决的？\n- 期待你把每一层逻辑都拆解清楚，场面严肃、被反复 challenge 很常见\n- 看重深度思考的习惯、面对追问时的冷静表达，以及结果导向的落地能力', desc: '反复 challenge，深挖每一层逻辑，考察你在压力下的冷静表达和结果导向。' },
+      alibaba: { label: '阿里·格局洞察', text: '阿里巴巴面试官风格：\n- 喜欢探讨行业趋势、技术发展方向、产品的战略价值这类偏宏观的问题\n- 例如："你怎么看待大模型对当前产品形态的影响？""未来一两年最大的机会点在哪里？"\n- 看重独立深刻的行业认知和系统性的思考框架', desc: '偏宏观战略视角，考察行业认知和系统性思考框架。' },
+      custom: { label: '自定义', text: null, desc: null },
+    };
+    let currentStyle = 'default';
+
     marked.setOptions({ breaks: true });
 
     // ─── Style toggle ───────────────────────────────────────
     function setStyle(type) {
-      useCustomStyle = type === 'custom';
-      document.getElementById('btn-default').classList.toggle('active', !useCustomStyle);
-      document.getElementById('btn-custom').classList.toggle('active', useCustomStyle);
-      document.getElementById('style-input').style.display = useCustomStyle ? 'block' : 'none';
+      currentStyle = type;
+      Object.keys(STYLES).forEach(k => {
+        const btn = document.getElementById('btn-' + k);
+        if (btn) btn.classList.toggle('active', k === type);
+      });
+      const s = STYLES[type];
+      const descEl = document.getElementById('style-desc');
+      const inputEl = document.getElementById('style-input');
+      if (type === 'custom') {
+        descEl.style.display = 'none';
+        inputEl.style.display = 'block';
+      } else {
+        descEl.textContent = s.desc;
+        descEl.style.display = 'block';
+        inputEl.style.display = 'none';
+      }
     }
 
     // ─── Start interview ────────────────────────────────────
@@ -223,7 +247,9 @@
       const api_key = document.getElementById('api-key').value.trim();
       if (!api_key) { alert('请填写 GLM API Key'); return; }
       if (!jd || !resume) { alert('请填写岗位JD和简历'); return; }
-      const style = useCustomStyle ? document.getElementById('style-input').value.trim() : '';
+      const style = currentStyle === 'custom'
+        ? document.getElementById('style-input').value.trim()
+        : (STYLES[currentStyle]?.text || '');
 
       document.getElementById('setup').style.display = 'none';
       const conv = document.getElementById('conversation');
@@ -339,11 +365,24 @@
 
     // ─── SSE fetch ──────────────────────────────────────────
     async function streamSSE(url, body, { onSection, onToken, onDone }, onSessionId) {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      let res;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      } catch (e) {
+        alert('网络错误，请检查连接后重试');
+        setInputEnabled(true);
+        return;
+      }
+      if (!res.ok) {
+        const msg = await res.text();
+        alert('请求失败：' + msg);
+        setInputEnabled(true);
+        return;
+      }
       if (onSessionId) {
         const sid = res.headers.get('X-Session-Id');
         if (sid) onSessionId(sid);
@@ -351,21 +390,31 @@
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const parts = buf.split('\n\n');
-        buf = parts.pop() ?? '';
-        for (const part of parts) {
-          if (!part.startsWith('data: ')) continue;
-          try {
-            const d = JSON.parse(part.slice(6));
-            if (d.type === 'section') onSection?.(d.agent);
-            else if (d.type === 'token') onToken?.(d.text);
-            else if (d.type === 'done') onDone?.();
-          } catch {}
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const parts = buf.split('\n\n');
+          buf = parts.pop() ?? '';
+          for (const part of parts) {
+            if (!part.startsWith('data: ')) continue;
+            try {
+              const d = JSON.parse(part.slice(6));
+              if (d.type === 'section') onSection?.(d.agent);
+              else if (d.type === 'token') onToken?.(d.text);
+              else if (d.type === 'done') onDone?.();
+              else if (d.type === 'error') {
+                finalizeCard();
+                alert('AI 返回错误：' + d.msg);
+                setInputEnabled(true);
+              }
+            } catch {}
+          }
         }
+      } catch (e) {
+        alert('连接中断，请重试');
+        setInputEnabled(true);
       }
     }
   </script>
