@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+user_data.json
+interview_*.md
+.env
